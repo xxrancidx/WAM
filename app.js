@@ -2,7 +2,7 @@ let userSub = '';
 
 async function initializeLiff() {
     try {
-        await liff.init({ liffId: "YOUR_LIFF_ID" });
+        await liff.init({ liffId: "2006480262-Yz0X7ZMB" });
         if (!liff.isLoggedIn()) {
             liff.login();
         } else {
