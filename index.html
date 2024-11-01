@@ -4,47 +4,185 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>報告修正</title>
-    <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/core/main.css" rel="stylesheet" />
-    <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid/main.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
         body {
-            font-family: sans-serif;
-            margin: 20px;
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
         }
-        .calendar-container {
-            margin-bottom: 20px;
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .date-picker {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .search-button {
+            width: 100%;
+            padding: 10px;
+            background: #00B900;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        .search-button:disabled {
+            background: #ccc;
         }
         .result-container {
             margin-top: 20px;
+            display: none;
         }
-        .result-item {
-            border: 1px solid #ddd;
-            padding: 10px;
-            margin-bottom: 10px;
-        }
-        .delete-btn {
-            background-color: #C7243A;
+        .delete-button {
+            background: #ff4d4d;
             color: white;
             border: none;
-            padding: 5px 10px;
+            padding: 10px 20px;
             border-radius: 4px;
-            float: right;
+            cursor: pointer;
+            margin-top: 10px;
         }
-        .summary-item {
-            background-color: #f5f5f5;
-            padding: 10px;
-            margin-bottom: 5px;
+        .error-message {
+            color: #ff4d4d;
+            margin: 10px 0;
+            display: none;
         }
     </style>
 </head>
 <body>
-    <div class="calendar-container" id="calendar"></div>
-    <div class="result-container" id="result"></div>
+    <div class="container">
+        <h1>WorkSite Attendance Manager</h1>
+        <input type="text" id="datePicker" class="date-picker" placeholder="日付を選択">
+        <button id="searchButton" class="search-button" disabled>検索</button>
+        <div id="errorMessage" class="error-message"></div>
+        <div id="resultContainer" class="result-container">
+            <div id="resultContent"></div>
+            <button id="deleteButton" class="delete-button">削除</button>
+        </div>
+    </div>
 
-    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core/main.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid/main.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/google-apps-script-client"></script>
-    <script src="app.js"></script>
+    <script>
+        let userProfile = null;
+        let currentData = null;
+
+        // LIFFの初期化
+        async function initializeLiff() {
+            try {
+                await liff.init({ liffId: "YOUR_LIFF_ID" });
+                if (!liff.isLoggedIn()) {
+                    liff.login();
+                } else {
+                    userProfile = await liff.getProfile();
+                    document.getElementById('searchButton').disabled = false;
+                }
+            } catch (err) {
+                showError('LINEログインに失敗しました');
+            }
+        }
+
+        // カレンダーの初期化
+        flatpickr("#datePicker", {
+            dateFormat: "Y/m/d",
+            maxDate: "today"
+        });
+
+        // 検索ボタンのイベントハンドラ
+        document.getElementById('searchButton').addEventListener('click', async () => {
+            const date = document.getElementById('datePicker').value;
+            if (!date) {
+                showError('日付を選択してください');
+                return;
+            }
+
+            try {
+                const response = await fetch('YOUR_GAS_WEBAPP_URL', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        date: date,
+                        userId: userProfile.userId
+                    })
+                });
+
+                const data = await response.json();
+                if (!data.success) {
+                    showError('指定された日付のデータが見つかりませんでした');
+                    return;
+                }
+
+                currentData = data;
+                displayResults(data);
+            } catch (err) {
+                showError('データの取得に失敗しました');
+            }
+        });
+
+        // 削除ボタンのイベントハンドラ
+        document.getElementById('deleteButton').addEventListener('click', async () => {
+            if (!confirm('本当に削除してよろしいですか？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('YOUR_GAS_WEBAPP_URL', {
+                    method: 'DELETE',
+                    body: JSON.stringify({
+                        date: document.getElementById('datePicker').value,
+                        userId: userProfile.userId
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    document.getElementById('resultContainer').style.display = 'none';
+                    document.getElementById('datePicker').value = '';
+                    showError('データを削除しました', false);
+                } else {
+                    showError('削除処理に失敗しました。時間をおいて再度お試しください');
+                }
+            } catch (err) {
+                showError('削除処理に失敗しました。時間をおいて再度お試しください');
+            }
+        });
+
+        // 結果の表示
+        function displayResults(data) {
+            const container = document.getElementById('resultContent');
+            container.innerHTML = `
+                <p>識別子：${userProfile.userId}</p>
+                <p>出向日：${data.personalData.date}</p>
+                <p>氏名：${data.personalData.name}</p>
+                <p>出向内容：${data.personalData.status}</p>
+                <p>現場名：${data.personalData.location}</p>
+                ${data.otherReports.length > 0 ? '<p>他の出向報告：はい</p>' : ''}
+                ${data.otherReports.map((report, index) => 
+                    `<p>${index + 1}. ${report.department}/${report.status}${report.count}名/${report.location}</p>`
+                ).join('')}
+            `;
+            document.getElementById('resultContainer').style.display = 'block';
+        }
+
+        // エラーメッセージの表示
+        function showError(message, isError = true) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+            errorElement.style.color = isError ? '#ff4d4d' : '#00B900';
+        }
+
+        // 初期化の実行
+        initializeLiff();
+    </script>
 </body>
 </html>
